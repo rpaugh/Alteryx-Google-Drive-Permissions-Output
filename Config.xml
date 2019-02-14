@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<Configuration>
+	<Properties>
+		<MetaInfo>
+			<Icon>Google Drive Permissions Output/Google Drive Permissions OutputIcon.png</Icon>
+			<Name>Google Drive Permissions Output</Name>
+			<CategoryName>Connectors</CategoryName>
+			<ToolVersion>1.0.0</ToolVersion>
+			<Author>Rick Paugh</Author>
+			<Description>Set permissions for the designated Google Drive file or folder.</Description>
+		</MetaInfo>
+	</Properties>
+</Configuration>

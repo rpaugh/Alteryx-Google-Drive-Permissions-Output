@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+
+    <script>
+        // Include version 1 of the engine base library.
+        document.write('<link rel="import" href="' + window.Alteryx.LibDir + '1/lib/alteryx/engine/includes.html">');
+    </script>
+
+    <script>
+        /**
+        * You may wish to namespace your own data for live-processing somewhere like this:
+        */
+        window.GDrive = {
+        }
+
+        var c = {};
+        var fields = {};
+        var authorization;
+
+        /**
+        * This function defines our input and output connections.
+        * It must match the input and output connections defined in the GUI plugin's XML file.
+        */
+        Alteryx.Plugin.DefineConnections = function()
+        {
+            return {
+                IncomingConnections: [{
+                    type: "Input",
+                    GroupInfo: {
+                        count: 0,
+                        grouping: "false"
+                    }
+                }],
+                OutgoingConnections: [/*{
+                    name: "Output"
+                }*/]
+            };
+        };
+
+        /**
+        * Called at the beginning of plugin lifetime with the plugin's configuration properties.
+        *
+        * @params config The plugin's configuration.
+        */
+        Alteryx.Plugin.PI_Init = function(config)
+        {
+            c = config.Configuration;
+        };
+
+        /**
+        * Called once for each incoming connection with the connection's metainfo. When a per-connection init comes in,
+        * we would probably store off the incoming RecordInfo.
+        *
+        * @params metaInfo The meta-information for the current incoming connection.
+        */
+        Alteryx.Plugin.II_Init = function(metaInfo)
+        {
+            fields = metaInfo.RecordInfo.Field;
+        };
+
+        /**
+        * After II_Init has been called for each incoming connection, II_PushRecords is called for each non-empty
+        * incoming connection with that connection's records. This implementation contains example code that
+        * pushes out the same records it receives.
+        *
+        * @param data The incoming records.
+        */
+        Alteryx.Plugin.II_PushRecords = function(data)
+        {
+            var myRecords = [];
+            var myRow = [];
+            for (var i = 0; i < data.Records.length; i++)
+            {
+                myRow = [];
+                for (var j = 0; j < data.Records[i].length; j++)
+                {
+                    myRow.push(data.Records[i][j]);
+                }
+                myRecords.push(myRow);
+            }
+
+            GDrive.Records = myRecords;
+
+            //Alteryx.Engine.SendMessage.PushRecords("Output", myRecords);
+        };
+
+        /**
+        * II_AllClosed is called with no arguments after all incoming connections have closed. This implementation
+        * sends a CloseOutput message with the name of the outgoing connection to close.
+        *
+        * All code paths must terminate with a call to Alteryx.Engine.SendMessage.Complete()
+        */
+        Alteryx.Plugin.II_AllClosed = function()
+        {
+
+            try {
+                authorize().then(function (token) {
+                    authorization = token;
+
+                    setPermissions(c.ItemId, GDrive.Records).then(function (response) {
+                        //console.log("setPermissions response");
+                        //console.log(JSON.stringify(response));
+                        Alteryx.Engine.SendMessage.Complete();
+                    }).catch(function (error) {
+                        Alteryx.Engine.SendMessage.Error(JSON.stringify(error));
+                        Alteryx.Engine.SendMessage.Complete();
+                    });
+                }).catch( function (error) {
+                    Alteryx.Engine.SendMessage.Error(error.message);
+                    Alteryx.Engine.SendMessage.Error(error.stack);
+                    Alteryx.Engine.SendMessage.Complete();
+                });
+            } catch (error) {
+                Alteryx.Engine.SendMessage.Error(error.message);
+                Alteryx.Engine.SendMessage.Error(error.stack);
+                Alteryx.Engine.SendMessage.Complete();
+            }
+        };
+
+        /**
+        * If the tool has no input:
+        *    PI_PushAllRecords is called instead of the II functions.
+        *    It is also called at configure time with a record limit of 0.
+        *
+        * If this function is implemented, all code paths must signal completion with a call to
+        *    Alteryx.Engine.SendMessage.Complete()
+        *
+        * @param recordLimit The maximum number of records that this function should return.
+        */
+        Alteryx.Plugin.PI_PushAllRecords = function(recordLimit)
+        {
+        };
+
+        /**
+        * PI_Close is called with no arguments at the end of the plugin's lifetime.
+        * All code paths must terminate with a call to Alteryx.Engine.SendMessage.PI_Close()
+        */
+        Alteryx.Plugin.PI_Close = function()
+        {
+            Alteryx.Engine.SendMessage.PI_Close();
+        };
+
+        function authorize() {
+            return new Promise(function (resolve, reject) {
+                var xhr = new XMLHttpRequest();
+                var url = "https://accounts.google.com/o/oauth2/token?";
+                var host = "Host=accounts.google.com";
+                var grant_type = "&grant_type=refresh_token";
+                var client_id = "&client_id=" + c.ClientId;
+                var client_secret = "&client_secret=" + c.ClientSecret;
+                var refresh_token = "&refresh_token=" + c.RefreshToken;
+                xhr.open("POST", url + host + grant_type + client_id + client_secret + refresh_token);
+                xhr.onload = function () {
+                    if (xhr.readyState === 4 && xhr.status === 200) {
+                        var json = JSON.parse(xhr.response);
+                        resolve(json.token_type + " " + json.access_token);
+                    } else {
+                        reject({
+                            status: this.status
+                        });
+                    }
+                };
+                xhr.onerror = function () {
+                  reject({
+                    status: this.status
+                  });
+                };
+                xhr.send();
+            });
+        }
+
+        const setPermissions = async (itemId, records) => {
+            for (let i = 0; i < records.length; i++) {
+                var url = "";
+                var data;
+                var urlAction = records[i][fields.indexOf(fields.find(x => x.name === "urlAction"))];
+                var permissionId = records[i][fields.indexOf(fields.find(x => x.name === "id"))];
+                var emailMessage = records[i][fields.indexOf(fields.find(x => x.name === "emailMessage"))];
+                var sendNotificationEmail = records[i][fields.indexOf(fields.find(x => x.name === "sendNotificationEmail"))];
+                var removeExpiration = records[i][fields.indexOf(fields.find(x => x.name === "removeExpiration"))];
+                var transferOwnership = records[i][fields.indexOf(fields.find(x => x.name === "transferOwnership"))];
+                var useDomainAdminAccess = records[i][fields.indexOf(fields.find(x => x.name === "useDomainAdminAccess"))];
+                var expirationTime = records[i][fields.indexOf(fields.find(x => x.name === "expirationTime"))];
+                var role = records[i][fields.indexOf(fields.find(x => x.name === "role"))];
+                var type = records[i][fields.indexOf(fields.find(x => x.name === "type"))];
+                var allowFileDiscovery = records[i][fields.indexOf(fields.find(x => x.name === "allowFileDiscovery"))];
+                var domain = records[i][fields.indexOf(fields.find(x => x.name === "domain"))];
+                var emailAddress = records[i][fields.indexOf(fields.find(x => x.name === "emailAddress"))];
+                if (urlAction !== undefined) {
+                    switch (urlAction.toLowerCase()) {
+                        case "post":
+                            url = "https://www.googleapis.com/drive/v3/files/" + itemId + "/permissions";
+                            url += "?supportsTeamDrives=" + c.IncludeTeamDrives.toLowerCase();
+                            if (emailMessage !== undefined && emailMessage !== null) url += "&emailMessage=" + emailMessage.toLowerCase();
+                            if (sendNotificationEmail !== undefined && sendNotificationEmail !== null) url += "&sendNotificationEmail=" + sendNotificationEmail;
+                            if (transferOwnership !== undefined && transferOwnership !== null) url += "&transferOwnership=" + transferOwnership.toLowerCase();
+                            if (useDomainAdminAccess !== undefined && useDomainAdminAccess !== null) url += "&useDomainAdminAccess=" + useDomainAdminAccess.toLowerCase();
+                            data = {};
+                            if (role !== undefined && role !== null) data.role = role.toLowerCase();
+                            if (type !== undefined && type !== null) data.type = type.toLowerCase();
+                            if (allowFileDiscovery !== undefined && allowFileDiscovery !== null) data.allowFileDiscovery = allowFileDiscovery.toLowerCase();
+                            if (domain !== undefined && domain !== null) data.domain = domain.toLowerCase();
+                            if (emailAddress !== undefined && emailAddress !== null) data.emailAddress = emailAddress.toLowerCase();
+                            break;
+                        case "patch":
+                            url = "https://www.googleapis.com/drive/v3/files/" + itemId + "/permissions/" + permissionId;
+                            url += "?supportsTeamDrives=" + c.IncludeTeamDrives.toLowerCase();
+                            if (removeExpiration !== undefined && removeExpiration !== null) url += "&removeExpiration=" + removeExpiration.toLowerCase();
+                            if (transferOwnership !== undefined && transferOwnership !== null) url += "&transferOwnership=" + transferOwnership.toLowerCase();
+                            if (useDomainAdminAccess !== undefined && useDomainAdminAccess !== null) url += "&useDomainAdminAccess=" + useDomainAdminAccess.toLowerCase();
+                            data = {};
+                            if (expirationTime !== undefined && expirationTime !== null) data.expirationTime = expirationTime.toLowerCase();
+                            if (role !== undefined && role !== null) data.role = role.toLowerCase();
+                            break;
+                        case "delete":
+                            url = "https://www.googleapis.com/drive/v3/files/" + itemId + "/permissions/" + permissionId;
+                            url += "?supportsTeamDrives=" + c.IncludeTeamDrives.toLowerCase();
+                            if (useDomainAdminAccess !== undefined && useDomainAdminAccess !== null) url += "&useDomainAdminAccess=" + useDomainAdminAccess.toLowerCase();
+                            break;
+                        default:
+                            Alteryx.Engine.SendMessage.Error("Invalid URL Action: " + urlAction);
+                            Alteryx.Engine.SendMessage.Complete();
+                            break;
+                    }
+                } else {
+                    Alteryx.Engine.SendMessage.Error("No URL Action Found.  Please provide a 'urlAction' field with one of the following values: 'create', 'patch', 'delete'.");
+                    Alteryx.Engine.SendMessage.Complete();
+                }
+                
+                const x = await xhrPermission(urlAction, url, data).then(function (permissionResult) {
+                    return;
+                }).catch(function (error) {
+                    Alteryx.Engine.SendMessage.Error(JSON.stringify(error));
+                    //Alteryx.Engine.SendMessage.Complete();
+                });
+                    
+            }
+            return "Done";
+        }
+
+        function xhrPermission(urlAction, url, data) {
+            console.log(url);
+            return new Promise(function (resolve, reject) {
+                var xhr = new XMLHttpRequest();
+                xhr.open(urlAction, encodeURI(url));
+                xhr.setRequestHeader("Authorization", authorization);
+                if (data !== undefined) {
+                    xhr.setRequestHeader("Content-Type", "application/json");
+                }
+                xhr.onload = function () {
+                    if (xhr.readyState === 4 && xhr.status === 200) {
+                        var json = JSON.parse(xhr.response);
+                        resolve(json);
+                    } else {
+                        reject({
+                            status: this.status
+                        });
+                    }
+                };
+                xhr.onerror = function () {
+                  reject({
+                    status: this.status
+                  });
+                };
+                if (data === undefined) {
+                    xhr.send();
+                } else {
+                    xhr.send(JSON.stringify(data));
+                }
+            });
+        }
+
+    </script>
+</head>
+<body>
+</body>
+</html>
