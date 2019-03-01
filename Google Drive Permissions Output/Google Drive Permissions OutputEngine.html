@@ -131,6 +131,7 @@
         */
         Alteryx.Plugin.PI_PushAllRecords = function(recordLimit)
         {
+            Alteryx.Engine.SendMessage.Complete();
         };
 
         /**
@@ -211,7 +212,7 @@
                             if (transferOwnership !== undefined && transferOwnership !== null) url += "&transferOwnership=" + transferOwnership.toLowerCase();
                             if (useDomainAdminAccess !== undefined && useDomainAdminAccess !== null) url += "&useDomainAdminAccess=" + useDomainAdminAccess.toLowerCase();
                             data = {};
-                            if (expirationTime !== undefined && expirationTime !== null) data.expirationTime = expirationTime.toLowerCase();
+                            if (expirationTime !== undefined && expirationTime !== null) data.expirationTime = expirationTime;
                             if (role !== undefined && role !== null) data.role = role.toLowerCase();
                             break;
                         case "delete":
@@ -225,7 +226,7 @@
                             break;
                     }
                 } else {
-                    Alteryx.Engine.SendMessage.Error("No URL Action Found.  Please provide a 'urlAction' field with one of the following values: 'create', 'patch', 'delete'.");
+                    Alteryx.Engine.SendMessage.Error("No URL Action Found.  Please provide a 'urlAction' field with one of the following values: 'post', 'patch', 'delete'.");
                     Alteryx.Engine.SendMessage.Complete();
                 }
                 
@@ -242,6 +243,7 @@
 
         function xhrPermission(urlAction, url, data) {
             console.log(url);
+            console.log(JSON.stringify(data));
             return new Promise(function (resolve, reject) {
                 var xhr = new XMLHttpRequest();
                 xhr.open(urlAction, encodeURI(url));
